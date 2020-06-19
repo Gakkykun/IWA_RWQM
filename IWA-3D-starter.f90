@@ -4,10 +4,12 @@ implicit none
     real, dimension(1,22) ::  River
     real, dimension(1,22) ::  Discharge
     real, dimension(28,22) :: Chemsp
+    real AirTemp, Sunlight, SavinovCon, Cloud
     real ALLRiver_Q, ALLRiver_V, ALLRiver_A, ALLRiver_R, ALLRiver_E, ALLRiver_TankV, &
          ALLRiver_K2T, ALLRiver_K220, ALLRiver_DOsat
     integer Div_Total, Time_Total
-    real KKeqw, KKeq1, KKeq2, KKeqN, KKeqP, KKeqSO               
+    real KKeqw, KKeq1, KKeq2, KKeqN, KKeqP, KKeqSO  
+    real SunlightSd             
     real,allocatable,dimension(:,:,:) :: ALLRiver
     integer :: Item_Pointer = 0                      
     real :: Kdeath_ALG = 0.1, Kdeath_CON = 0.05, Kgrowth_ALG = 2.0, Kgrowth_CON = 0.0002, Kgrowth_Haer = 2.0, &
@@ -24,6 +26,7 @@ implicit none
     open(unit=98, file='98_RivWQ.csv',status='old'); read(98, '()')
     open(unit=97, file='97_DisWQ.csv',status='old'); read(97, '()')
     open(unit=96, file='96_Matrix.csv',status='old')
+    open(unit=95, file='95_CliST.csv',status='old'); read(95, '()')
     open(unit=10, file='Output-starter.csv',status='replace')
           
     read (99,*) River_Q, Discharge_Q, ALLRiver_n, ALLRiver_I, ALLRiver_B, ALLRiver_H, &
@@ -114,7 +117,9 @@ implicit none
                 Chemsp(28,1), Chemsp(28,2), Chemsp(28,3), Chemsp(28,4), Chemsp(28,5), Chemsp(28,6), Chemsp(28,7), Chemsp(28,8), &
                 Chemsp(28,9), Chemsp(28,10), Chemsp(28,11), Chemsp(28,12), Chemsp(28,13), Chemsp(28,14), Chemsp(28,15), &
                 Chemsp(28,16), Chemsp(28,17), Chemsp(28,18), Chemsp(28,19), Chemsp(28,20), Chemsp(28,21), Chemsp(28,22) 
-    	 
+         
+    read (95,*) AirTemp, Sunlight, SavinovCon, Cloud 
+
     ALLRiver_Q = River_Q + Discharge_Q
     ALLRiver_A = ALLRiver_B * ALLRiver_H    
     ALLRiver_R = ALLRiver_A / (2.0 * ALLRiver_H + ALLRiver_B)
@@ -141,6 +146,8 @@ implicit none
     KKeqP = 10.0**((-3.46) - (219.4 / (273.15 + ALLRiver_Temp)))
     KKeqSO = 12.0 * 40.0 * 10.0 **(19.87 - (3059 / (273.15 + ALLRiver_Temp)) - (0.04035 * (273.15 + ALLRiver_Temp))) 
              
+    Sunlightsd = Sunlight * ( 1 - ( 1 - SavinovCon ) * Cloud )
+
     Time_Total = int(Cal_Total/Time_Stride)
     	    	       
     allocate (ALLRiver(22, Time_Total, Div_Total))
