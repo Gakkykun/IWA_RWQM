@@ -3,16 +3,12 @@ implicit none
     real River_Q, Discharge_Q, ALLRiver_n, ALLRiver_I,ALLRiver_B, ALLRiver_H, ALLRiver_L, ALLRiver_Temp           
     real, dimension(1,22) ::  River
     real, dimension(1,22) ::  Discharge
-    real AirTemp, Sunlight, SavinovCon, Cloud
+    real AirTemp, Sunlight, SavinovCon, Cloud, SunlightSd
     real, dimension(28,22) :: Chemsp
     real ALLRiver_Q, ALLRiver_V, ALLRiver_A, ALLRiver_R, ALLRiver_E, ALLRiver_TankV
     integer Div_Total, Time_Total
     real KKeqw, KKeq1, KKeq2, KKeqN, KKeqP, KKeqSO               
-    real SunlightSd
     real,allocatable,dimension(:,:,:) :: ALLRiver                      
-    integer :: Div_Pointer = 0, Cal_Pointer = 0, Item_Pointer = 0, Runge_Pointer = 0
-    real, dimension(22,1) :: TempPointer, Tempval_Inf   
-    real, dimension(22,4)  :: RungeK
     real :: Kdeath_ALG = 0.1, Kdeath_CON = 0.05, Kgrowth_ALG = 2.0, Kgrowth_CON = 0.0002, Kgrowth_Haer = 2.0, &
             Kgrowth_Anox = 1.6, Kgrowth_N1 = 0.8, Kgrowth_N2 = 1.1, Khyd = 3.0, Kresp_ALG = 0.1, Kresp_CON = 0.05, &
             Kresp_Haer = 0.2, Kresp_Anox = 0.1, Kresp_N1 = 0.05, Kresp_N2 = 0.05, Keq1 = 0.001, Keq2 = 0.0001, &
@@ -21,7 +17,10 @@ implicit none
             KNH4_N1 = 0.5, K1 = 500.0, KNO3_Anox = 0.5, KNO2_Anox = 0.2, KNO2_N2 = 0.5, KO2_ALG = 0.2, KO2_CON = 0.5, &
             KO2_Haer = 0.2, KO2_N1 = 0.5, KO2_N2 = 0.5, KS_Haer = 2.0, KS_Anox = 2.0, Beta_ALG = 0.046, Beta_CON = 0.08, &
             Beta_H = 0.07, Beta_HYD= 0.07, Beta_N1 = 0.098, Beta_N2 = 0.069, Temp0 = 20.0
-    real :: Cal_Total = 1.0, Time_Stride = 0.001  ![d]
+    real :: Simulation_duration = 1.0, deltaT = 0.001  ![d]
+    integer :: Loc_Pointer, Time_Pointer, Item_Pointer, Runge_Pointer
+    real, dimension(22,1) :: TempPointer, Tempval_Inf   
+    real, dimension(22,4)  :: RungeK
                      
     open(unit=99, file='99_RivST.csv',status='old'); read(99, '()')
     open(unit=98, file='98_RivWQ.csv',status='old'); read(98, '()')
@@ -33,8 +32,8 @@ implicit none
     read (99,*) River_Q, Discharge_Q, ALLRiver_n, ALLRiver_I, ALLRiver_B, ALLRiver_H, &
                 ALLRiver_L, ALLRiver_Temp       
     read (98,*) River(1, :)         
-    read (97,*) Discharge(1, :)                                                                     
-    read (96, *) Chemsp(1,1), Chemsp(1,2), Chemsp(1,3), Chemsp(1,4), Chemsp(1,5), Chemsp(1,6), Chemsp(1,7), Chemsp(1,8), & 
+    read (97,*) Discharge(1, :)
+    read (96,*) Chemsp(1,1), Chemsp(1,2), Chemsp(1,3), Chemsp(1,4), Chemsp(1,5), Chemsp(1,6), Chemsp(1,7), Chemsp(1,8), & 
                 Chemsp(1,9), Chemsp(1,10), Chemsp(1,11), Chemsp(1,12), Chemsp(1,13), Chemsp(1,14), Chemsp(1,15), Chemsp(1,16), &
                 Chemsp(1,17), Chemsp(1,18), Chemsp(1,19), Chemsp(1,20), Chemsp(1,21), Chemsp(1,22), &              
                 Chemsp(2,1), Chemsp(2,2), Chemsp(2,3), Chemsp(2,4), Chemsp(2,5), Chemsp(2,6), Chemsp(2,7), Chemsp(2,8), &
@@ -126,7 +125,7 @@ implicit none
     ALLRiver_R = ALLRiver_A / (2.0 * ALLRiver_H + ALLRiver_B)
     ALLRiver_V = (1 / ALLRiver_n) * ALLRiver_R ** 0.6666666667 * ALLRiver_I ** 0.5
     ALLRiver_E = 2.0 * sqrt(9.8 * ALLRiver_R * ( (ALLRiver_n ** 2.0 * ALLRiver_V ** 2.0) / ALLRiver_R**(1.3333333333) ) ) * &
-                 ALLRiver_H * ( ALLRiver_B / ALLRiver_H )**(1.5)
+                 ALLRiver_H * ( ALLRiver_B / ALLRiver_H )**1.5
     Div_Total = int((ALLRiver_V * ALLRiver_L) / (2.0 * ALLRiver_E) + 1.0)
     ALLRiver_TankV = ALLRiver_B * ALLRiver_H * ALLRiver_L / Div_Total
     
@@ -144,7 +143,7 @@ implicit none
         print *, 'Warning! Div_Total is less than 10 ! >>> Div_Total = 10'
     End if
 
-    Time_Total = int(Cal_Total/Time_Stride)
+    Time_Total = int(Simulation_duration/deltaT)
 	    	       
     allocate (ALLRiver(22, Time_Total, Div_Total))
 
@@ -154,27 +153,33 @@ implicit none
                                                  Discharge_Q * Discharge(1, Item_Pointer)) / ALLRiver_Q
     end do
 
+    write(10, *) 'Time, location, Ss, SI, SNH4, SNH3, SNO2, SNO3, SHPO4, SH2PO4, SO2, SCO2, &
+                   & SHCO3, SCO3, SH, SOH, SCa, XH, XN1, XN2, XALG, XCON, XS, XI'
 
     ! Loop calculation
-    do Div_Pointer = 1, Div_Total; do Cal_Pointer = 2, Time_Total  
-        do Item_Pointer = 1, 22; do Runge_Pointer = 1, 4                    
+    do Time_Pointer = 2, Time_Total; do Loc_Pointer = 1, Div_Total  
+        do Item_Pointer = 1, 22; do Runge_Pointer = 1, 4 
+            ! Set concentrations in a reservoir depending on a rank in the Runge-Kutta method                   
             if (Runge_Pointer == 1) then
-                TempPointer(:, 1) = ALLRiver(:, Cal_Pointer-1, Div_Pointer)
+                TempPointer(:, 1) = ALLRiver(:, Time_Pointer-1, Loc_Pointer)
             else if (Runge_Pointer == 2) then
-                TempPointer(:, 1) = ALLRiver(:, Cal_Pointer-1, Div_Pointer) + (RungeK(:,1) * Time_Stride / 2.0)
+                TempPointer(:, 1) = ALLRiver(:, Time_Pointer-1, Loc_Pointer) + (RungeK(:,1) * deltaT / 2.0)
             else if (Runge_Pointer == 3) then
-                TempPointer(:, 1) = ALLRiver(:, Cal_Pointer-1, Div_Pointer) + (RungeK(:,2)  * Time_Stride / 2.0)
+                TempPointer(:, 1) = ALLRiver(:, Time_Pointer-1, Loc_Pointer) + (RungeK(:,2)  * deltaT / 2.0)
             else if (Runge_Pointer == 4) then
-                TempPointer(:, 1) = ALLRiver(:, Cal_Pointer-1, Div_Pointer) + RungeK(:,3)  * Time_Stride
+                TempPointer(:, 1) = ALLRiver(:, Time_Pointer-1, Loc_Pointer) + RungeK(:,3)  * deltaT
             end if
 
-            if (Div_Pointer == 1) then
-                Tempval_Inf(:, 1) = ALLRiver(:, 1, Div_Pointer)                                                    
+            ! Set influent concentrations
+            if (Loc_Pointer == 1) then
+                Tempval_Inf(:, 1) = ALLRiver(:, 1, Loc_Pointer)                                                    
             else    
-                Tempval_Inf(:, 1) = ALLRiver(:, Cal_Pointer-1, Div_Pointer-1)                                                    
+                Tempval_Inf(:, 1) = ALLRiver(:, Time_Pointer-1, Loc_Pointer-1)                                                    
             end if
-                                                    
-            RungeK(Item_Pointer, Runge_Pointer) = Time_Stride * (( ALLRiver_Q / ALLRiver_TankV) * &
+
+
+            ! Calculation of 'ks'(slopes or derivatives) in the Runge-Kutta method                                        
+            RungeK(Item_Pointer, Runge_Pointer) = ( ALLRiver_Q / ALLRiver_TankV) * &
                 (Tempval_Inf(Item_Pointer, 1) - TempPointer(Item_Pointer, 1)) &
                 + Chemsp(1,Item_Pointer) * Kgrowth_Haer * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
                 Frac(TempPointer(1,1), KS_Haer) * Frac(TempPointer(9,1), KO2_Haer) * & 
@@ -182,18 +187,18 @@ implicit none
                 Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_Haer) * TempPointer(16, 1) &  
                 + Chemsp(2,Item_Pointer) * Kgrowth_Haer * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
                 Frac(TempPointer(1,1), KS_Haer) * Frac(TempPointer(9,1), KO2_Haer) * &
-                Frac(TempPointer(3,1) + TempPointer(4,1), KNH_aer)  * &
-                Frac(TempPointer(6,1), KNH_aer) * Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_Haer) * TempPointer(16,1) &  
+                Frac(KNH_aer, TempPointer(3,1) + TempPointer(4,1))  * &
+                Frac(KNH_aer, TempPointer(6,1)) * Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_Haer) * TempPointer(16,1) &  
                 + Chemsp(3,Item_Pointer) * Kresp_Haer * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
                 Frac(TempPointer(9,1), KO2_Haer) * TempPointer(16,1) &  
                 + Chemsp(4,Item_Pointer) * Kgrowth_Anox * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
-                Frac(TempPointer(1,1), KS_Anox) * Frac(TempPointer(9,1), KO2_Haer) * Frac(TempPointer(6,1), KNO3_Anox) * &
+                Frac(TempPointer(1,1), KS_Anox) * Frac(KO2_Haer, TempPointer(9,1)) * Frac(TempPointer(6,1), KNO3_Anox) * &
                 Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_Anox) * TempPointer(16,1) & 
                 + Chemsp(5,Item_Pointer) * Kgrowth_Anox * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
-                Frac(TempPointer(1,1), KS_Anox) * Frac(TempPointer(9,1), KO2_Haer) * Frac(TempPointer(5,1), KNO2_Anox) * &
+                Frac(TempPointer(1,1), KS_Anox) * Frac(KO2_Haer, TempPointer(9,1)) * Frac(TempPointer(5,1), KNO2_Anox) * &
                 Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_Anox) * TempPointer(16,1) &    
                 + Chemsp(6,Item_Pointer) * Kresp_Anox * exp(Beta_H * (ALLRiver_Temp - Temp0)) * &
-                Frac(TempPointer(9,1), KO2_Haer) * Frac(TempPointer(6,1), KNO3_Anox) * TempPointer(16,1) & 
+                Frac(KO2_Haer, TempPointer(9,1)) * Frac(TempPointer(6,1), KNO3_Anox) * TempPointer(16,1) & 
                 + Chemsp(7,Item_Pointer) * Kgrowth_N1 * exp(Beta_N1 * (ALLRiver_Temp - Temp0)) * &
                 Frac(TempPointer(9,1), KO2_N1) * Frac(TempPointer(3,1) + TempPointer(4,1), KNH4_N1) *&
                 Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_N1) * TempPointer(17,1) &  
@@ -211,7 +216,7 @@ implicit none
                 TempPointer(19,1) & 
                 + Chemsp(12,Item_Pointer) * Kgrowth_ALG * exp(Beta_ALG * (ALLRiver_Temp - Temp0)) * &
                 Frac(TempPointer(3,1) + TempPointer(4,1) + TempPointer(6,1), KN_ALG) * &
-                Frac(TempPointer(3,1) + TempPointer(4,1), KNH4_ALG) * &
+                Frac(KNH4_ALG, TempPointer(3,1) + TempPointer(4,1)) * &
                 Frac(TempPointer(7,1) + TempPointer(8,1), KHPO4_ALG) * (Sunlightsd / K1) * exp(1 - (Sunlightsd / K1)) * &
                 TempPointer(19,1) &  
                 + Chemsp(13,Item_Pointer) * Kresp_ALG * exp(Beta_ALG * (ALLRiver_Temp - Temp0)) * &
@@ -236,23 +241,24 @@ implicit none
                 + Chemsp(25,Item_Pointer) * Keqw * (1.0 - TempPointer(13,1) * TempPointer(14,1) / KKeqw) & 
                 + Chemsp(26,Item_Pointer) * KeqN * (TempPointer(3,1) - TempPointer(13,1) * TempPointer(4,1) / KKeqN) & 
                 + Chemsp(27,Item_Pointer) * KeqP * (TempPointer(8,1) - TempPointer(13,1) * TempPointer(7,1) / KKeqP) &   
-                + Chemsp(28,Item_Pointer) * KeqSO * (1.0 - TempPointer(15, 1) * TempPointer(12,1) / KKeqSO))
+                + Chemsp(28,Item_Pointer) * KeqSO * (1.0 - TempPointer(15, 1) * TempPointer(12,1) / KKeqSO)
             end do !Runge_Pointer
                                                                             
-            ALLRiver(Item_Pointer, Cal_Pointer,Div_Pointer) = ALLRiver(Item_Pointer, Cal_Pointer-1,Div_Pointer) + &
-                (RungeK(Item_Pointer,1) + RungeK(Item_Pointer,2)*2.0 + RungeK(Item_Pointer,3)*2.0 + RungeK(Item_Pointer,4))/6.0  
+            ALLRiver(Item_Pointer,Time_Pointer,Loc_Pointer) = ALLRiver(Item_Pointer,Time_Pointer-1,Loc_Pointer) &
+                + (RungeK(Item_Pointer,1) + RungeK(Item_Pointer,2)*2.0 + RungeK(Item_Pointer,3)*2.0 + RungeK(Item_Pointer,4)) & 
+                * deltaT/6.0  
         end do !Item_Pointer        
                                                                                         
         ! Writing data in a csv file                
-        if (mod(Cal_Pointer, 100).eq. 0) then
-            write(10, 200) Div_Pointer, Cal_Pointer*Time_Stride, ALLRiver(:, Cal_Pointer,Div_Pointer)
+        if (mod(Time_Pointer, 100).eq. 0) then
+            write(10, 200) Loc_Pointer, Time_Pointer*deltaT, ALLRiver(:, Time_Pointer,Loc_Pointer)
         end if 
         
-    end do; end do !Div_counter and Cal_counter
+    end do; end do !Loc_counter and Time_counter
     
-    close (unit=99); close (unit=98); close (unit=97); close (unit=95); close (unit=96); close (unit=10)
+    close (unit=99); close (unit=98); close (unit=97); close (unit=96); close (unit=95); close (unit=10)
 
-200 format(I8, 22(F10.4, ','), F10.4)    
+200 format(I8, ',', 22(F10.4, ','), F10.4)    
 
 contains
 

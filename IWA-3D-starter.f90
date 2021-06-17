@@ -3,15 +3,12 @@ implicit none
     real River_Q, Discharge_Q, ALLRiver_n, ALLRiver_I,ALLRiver_B, ALLRiver_H, ALLRiver_L, ALLRiver_Temp           
     real, dimension(1,22) ::  River
     real, dimension(1,22) ::  Discharge
+    real AirTemp, Sunlight, SavinovCon, Cloud, SunlightSd
     real, dimension(28,22) :: Chemsp
-    real AirTemp, Sunlight, SavinovCon, Cloud
-    real ALLRiver_Q, ALLRiver_V, ALLRiver_A, ALLRiver_R, ALLRiver_E, ALLRiver_TankV, &
-         ALLRiver_K2T, ALLRiver_K220, ALLRiver_DOsat
+    real ALLRiver_Q, ALLRiver_V, ALLRiver_A, ALLRiver_R, ALLRiver_E, ALLRiver_TankV
     integer Div_Total, Time_Total
-    real KKeqw, KKeq1, KKeq2, KKeqN, KKeqP, KKeqSO  
-    real SunlightSd             
-    real,allocatable,dimension(:,:,:) :: ALLRiver
-    integer :: Item_Pointer = 0                      
+    real KKeqw, KKeq1, KKeq2, KKeqN, KKeqP, KKeqSO               
+    real,allocatable,dimension(:,:,:) :: ALLRiver                    
     real :: Kdeath_ALG = 0.1, Kdeath_CON = 0.05, Kgrowth_ALG = 2.0, Kgrowth_CON = 0.0002, Kgrowth_Haer = 2.0, &
             Kgrowth_Anox = 1.6, Kgrowth_N1 = 0.8, Kgrowth_N2 = 1.1, Khyd = 3.0, Kresp_ALG = 0.1, Kresp_CON = 0.05, &
             Kresp_Haer = 0.2, Kresp_Anox = 0.1, Kresp_N1 = 0.05, Kresp_N2 = 0.05, Keq1 = 0.001, Keq2 = 0.0001, &
@@ -20,19 +17,20 @@ implicit none
             KNH4_N1 = 0.5, K1 = 500.0, KNO3_Anox = 0.5, KNO2_Anox = 0.2, KNO2_N2 = 0.5, KO2_ALG = 0.2, KO2_CON = 0.5, &
             KO2_Haer = 0.2, KO2_N1 = 0.5, KO2_N2 = 0.5, KS_Haer = 2.0, KS_Anox = 2.0, Beta_ALG = 0.046, Beta_CON = 0.08, &
             Beta_H = 0.07, Beta_HYD= 0.07, Beta_N1 = 0.098, Beta_N2 = 0.069, Temp0 = 20.0
-    real :: Cal_Total = 1.0, Time_Stride = 0.001  ![d]
+    real :: Simulation_duration = 1.0, deltaT = 0.001  ![d]
+    integer :: Item_Pointer
                      
     open(unit=99, file='99_RivST.csv',status='old'); read(99, '()')
     open(unit=98, file='98_RivWQ.csv',status='old'); read(98, '()')
     open(unit=97, file='97_DisWQ.csv',status='old'); read(97, '()')
     open(unit=96, file='96_Matrix.csv',status='old')
     open(unit=95, file='95_CliST.csv',status='old'); read(95, '()')
-    open(unit=10, file='Output-starter.csv',status='replace')
+    open(unit=10, file='Output.csv',status='replace')
           
     read (99,*) River_Q, Discharge_Q, ALLRiver_n, ALLRiver_I, ALLRiver_B, ALLRiver_H, &
                 ALLRiver_L, ALLRiver_Temp      
     read (98,*) River(1, :)         
-    read (97,*) Discharge(1, :)                                                                    
+    read (97,*) Discharge(1, :)
     read (96,*) Chemsp(1,1), Chemsp(1,2), Chemsp(1,3), Chemsp(1,4), Chemsp(1,5), Chemsp(1,6), Chemsp(1,7), Chemsp(1,8), & 
                 Chemsp(1,9), Chemsp(1,10), Chemsp(1,11), Chemsp(1,12), Chemsp(1,13), Chemsp(1,14), Chemsp(1,15), Chemsp(1,16), &
                 Chemsp(1,17), Chemsp(1,18), Chemsp(1,19), Chemsp(1,20), Chemsp(1,21), Chemsp(1,22), &              
@@ -125,19 +123,9 @@ implicit none
     ALLRiver_R = ALLRiver_A / (2.0 * ALLRiver_H + ALLRiver_B)
     ALLRiver_V = (1 / ALLRiver_n) * ALLRiver_R ** 0.6666666667 * ALLRiver_I ** 0.5
     ALLRiver_E = 2.0 * sqrt(9.8 * ALLRiver_R * ( (ALLRiver_n ** 2.0 * ALLRiver_V ** 2.0) / ALLRiver_R**(1.3333333333) ) ) * &
-                ALLRiver_H * ( ALLRiver_B / ALLRiver_H )**(1.5)
-    
+                ALLRiver_H * ( ALLRiver_B / ALLRiver_H )**1.5
     Div_Total = int((ALLRiver_V * ALLRiver_L) / (2.0 * ALLRiver_E) + 1.0)
-
-    if (Div_Total < 10) Then
-        Div_Total = 10
-        print *, 'Warning! Div_Total is less than 10 ! >>> Div_Total = 10'
-    End if
-    
     ALLRiver_TankV = ALLRiver_B * ALLRiver_H * ALLRiver_L / Div_Total
-    ALLRiver_K220 = 6.02 * 10.0 ** (-4.0) * ALLRiver_n ** 0.75 * ALLRiver_V ** 1.125 / ALLRiver_H ** 1.5
-    ALLRiver_K2T = ALLRiver_K220 * (1.047 ** (ALLRiver_Temp - 20.0))    
-    ALLRiver_DOsat = 14.652 - 0.41022 * ALLRiver_Temp + 0.007991 * ALLRiver_Temp ** 2.0 - 0.000077774 * ALLRiver_Temp ** 3.0
     
     KKeqw = 10.0**((-4470.99) / (273.15 + ALLRiver_Temp) + 12.0875 - 0.01706 * (273.15 + ALLRiver_Temp))
     KKeq1 = 10.0**(17.843 - (3404.71 / (273.15 + ALLRiver_Temp)) - 0.032786 * (273.15 + ALLRiver_Temp))
@@ -148,20 +136,25 @@ implicit none
              
     Sunlightsd = Sunlight * ( 1 - ( 1 - SavinovCon ) * Cloud )
 
-    Time_Total = int(Cal_Total/Time_Stride)
+    if (Div_Total < 10) Then
+        Div_Total = 10
+        print *, 'Warning! Div_Total is less than 10 ! >>> Div_Total = 10'
+    End if
+
+    Time_Total = int(Simulation_duration/deltaT)
     	    	       
     allocate (ALLRiver(22, Time_Total, Div_Total))
 
     ! Initial conditions
     do Item_Pointer = 1, 22
         ALLRiver(Item_Pointer, 1, 1:Div_Total) = (River_Q * River(1, Item_Pointer) + &
-                                                 Discharge_Q * Discharge(1, Item_Pointer)) / ALLRiver_Q
-                                                 
-        write(10, 200) ALLRiver(Item_Pointer, 1, :) 
+                                                 Discharge_Q * Discharge(1, Item_Pointer)) / ALLRiver_Q              
     end do
 
-    close (unit=99); close (unit=98); close (unit=97); close (unit=96); close (unit=10)
+    write(10, *) 'Time, location, Ss, SI, SNH4, SNH3, SNO2, SNO3, SHPO4, SH2PO4, SO2, SCO2, &
+                   & SHCO3, SCO3, SH, SOH, SCa, XH, XN1, XN2, XALG, XCON, XS, XI'
 
-200 format(100(F15.9, ','), F10.4)   
+    close (unit=99); close (unit=98); close (unit=97); close (unit=96); close (unit=95); close (unit=10)
+
                     
 end program IWA
